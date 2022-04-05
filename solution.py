@@ -27,8 +27,9 @@ from einops import rearrange
 use_cuda = torch.cuda.is_available()
 print(use_cuda)
 device = torch.device("cuda" if use_cuda else "cpu")
-batch_size = 512
 
+batch_size = 1024
+num_epochs = 30
 
 def get_dataloader(path, kind):
     """
@@ -88,35 +89,6 @@ def get_optimizer(model):
     return optimizer
 
 def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
-    # for epoch in range(num_epochs):
-    #     start_time = time.time()
-    #     model.train(True) # enable dropout / batch_norm training behavior
-    #     train_accuracy_batch = []
-    #     for batch_no, (X_batch, y_batch) in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
-    #         # model.zero_grad()
-    #         # transferring batch to GPU
-    #         X_batch_gpu = X_batch.to(device)
-    #         # forward propagation through the model
-    #         prediction = model(X_batch_gpu)
-    #         # calculating loss
-    #         loss_val = loss(prediction, y_batch)
-    #         optimizer.zero_grad()
-    #         # backward propagation through the model
-    #         loss_val.backward()
-    #         # optimizer step
-    #         optimizer.step()
-
-    #         train_loss.append(loss.item())
-
-    #         accuracy = compute_accuracy(prediction, y_batch, device=device)
-    #         train_accuracy_batch.append(accuracy.item())
-
-    #         if batch_no % 15 == 0:
-    #             # plot_loss_and_accuracy(train_loss, train_accuracy, val_accuracy, clear_output=True)
-    #             print(f'epoch {epoch} training stage...')
-                
-    #             # sending loss to TensorBoard (don't think about this for now)
-    #             writer.add_scalar('training loss', loss.item(), len(train_loss))
     """
     Train `model` on `train_dataloader` using `optimizer`. Use best-accuracy settings.
 
@@ -134,7 +106,7 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
     train_loss = []
     train_accuracy = []
     val_accuracy = []
-    num_epochs = 1
+    
 
     for epoch in range(num_epochs):
         start_time = time.time()
@@ -146,6 +118,7 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
             model.zero_grad()
             # transferring batch to GPU
             X_batch_gpu = X_batch.to(device)
+            y_batch = y_batch.to(device)
             # forward propagation through the model
             prediction = model(X_batch_gpu)
             # calculating loss
@@ -164,7 +137,7 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
                 # plot_loss_and_accuracy(train_loss, train_accuracy, val_accuracy, clear_output=True)
                 # print(f'epoch {epoch} training stage...')
                 
-                # sending loss to TensorBoard (don't think about this for now)
+
                 writer.add_scalar('training loss', loss_val.item(), len(train_loss))
 
         train_accuracy_overall = np.mean(train_accuracy_batch) * 100
@@ -177,6 +150,7 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
             for X_batch, y_batch in tqdm(val_dataloader):
                 # transferring batch to GPU
                 X_batch_gpu = X_batch.to(device)
+                # y_batch = to
                 # forward propagation through the model
                 prediction = model(X_batch_gpu)
 
@@ -185,10 +159,11 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
                 val_accuracy_batch.append(accuracy.item())
             
                 # sending pictures to TensorBoard (don't think about this for now)
-                writer.add_figure('predictions vs. actuals', plot_classes_preds(model, X_batch_gpu, y_batch), global_step=epoch)
+                # writer.add_figure('predictions vs. actuals', plot_classes_preds(model, X_batch_gpu, y_batch), global_step=epoch)
 
-                val_accuracy_overall = np.mean(val_accuracy_batch) * 100
-                val_accuracy.append(val_accuracy_overall.item())
+            val_accuracy_overall = np.mean(val_accuracy_batch) * 100
+            val_accuracy.append(val_accuracy_overall.item())
+            writer.add_scalar('accuracy', val_accuracy_overall.item(), len(val_accuracy))
 
 def compute_loss(prediction, y_true, device='cuda:0'):
     y_true_on_device = y_true.to(device)
