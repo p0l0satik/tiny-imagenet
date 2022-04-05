@@ -26,7 +26,7 @@ import numpy as np
 from einops import rearrange
 
 use_cuda = torch.cuda.is_available()
-device = torch.device("cuda:0" if use_cuda else "cpu")
+device = torch.device("cuda:2" if use_cuda else "cpu")
 print(device)
 
 batch_size = 128
@@ -53,8 +53,35 @@ def get_dataloader(path, kind):
         `torch.int64` tensor of shape `(batch_size,)` with ground truth class labels.
     """
     data = os.path.join(path, kind)
-    dataset = datasetss.ImageFolder(data, transform=T.ToTensor())
     
+    my_transform = {
+        'train': T.Compose(
+            [
+                # YOUR AUGMENTATIONS
+                T.RandomRotation(degrees=(-20, 20)),
+                T.ToTensor(),
+            ]),
+        
+        'val': T.Compose(
+            [
+                T.ToTensor(),
+            ])
+    }
+
+    dataset = datasetss.ImageFolder(data, transform=my_transform[kind])
+
+    if kind == "train":
+        n_pics_to_show = 10
+        fig, ax = plt.subplots(1, n_pics_to_show, figsize=(20, 10))
+
+        for i in range(n_pics_to_show):
+            rand_idx = np.random.randint(len(dataset))
+            pic, label = dataset[rand_idx]
+            
+            pic_np = pic.data.numpy()
+            pic_np = np.rollaxis(pic_np, 0, 3)    # 3xHxW to HxWx3
+            ax[i].imshow(pic_np)
+            ax[i].set_title(label)
     
     if use_cuda:
         kwargs = {"pin_memory": True, "num_workers": 1}
@@ -73,9 +100,11 @@ def get_model():
     model:
         `torch.nn.Module`
     """
-    resnet18 = models.resnet18(num_classes=200)
+    model = models.resnet18(num_classes=200)
+    model.conv1 = nn.Conv2d(3, 64, kernel_size=(3,3), stride=(2,2), padding=(1,1), bias=False)
     # model = nn.DataParallel(resnet18, device_ids=[0, 1])
-    model = resnet18.to(device)
+    model = model.to(device)
+    
     return model
 
 def get_optimizer(model):
@@ -105,6 +134,8 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
     
     loss = nn.CrossEntropyLoss().type(torch.FloatTensor)
     writer = SummaryWriter(f'runs/tim')
+    
+
     train_loss = []
     train_accuracy = []
     val_accuracy = []
@@ -120,6 +151,7 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
             model.zero_grad()
             # transferring batch to GPU
             X_batch_gpu = X_batch.to(device)
+            # writer.add_graph(model, X_batch)
             y_batch = y_batch.to(device)
             # forward propagation through the model
             prediction = model(X_batch_gpu)
@@ -160,6 +192,7 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
             for X_batch, y_batch in tqdm(val_dataloader):
                 # transferring batch to GPU
                 X_batch_gpu = X_batch.to(device)
+                writer.add_graph(model, X_batch_gpu)
                 # y_batch = to
                 # forward propagation through the model
                 prediction = model(X_batch_gpu)
@@ -169,7 +202,7 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
                 val_accuracy_batch.append(accuracy.item())
             
                 # sending pictures to TensorBoard (don't think about this for now)
-                # writer.add_figure('predictions vs. actuals', plot_classes_preds(model, X_batch_gpu, y_batch), global_step=epoch)
+                writer.add_figure('predictions vs. actuals', plot_classes_preds(model, X_batch_gpu, y_batch), global_step=epoch)
 
             val_accuracy_overall = np.mean(val_accuracy_batch) * 100
             val_accuracy.append(val_accuracy_overall.item())
@@ -207,7 +240,6 @@ def plot_classes_preds(net, images, labels):
     information based on whether the prediction was correct or not.
     Uses the "images_to_probs" function.
     '''
-    classes = ('airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
     preds, probs = images_to_probs(net, images)
     # plot the images in the batch, along with predicted and true labels
     fig = plt.figure(figsize=(12, 12))
@@ -215,9 +247,9 @@ def plot_classes_preds(net, images, labels):
         ax = fig.add_subplot(1, 4, idx+1, xticks=[], yticks=[])
         plt.imshow(rearrange(images[idx].cpu(), 'c h w -> h w c'))
         ax.set_title("{0}, {1:.1f}%\n(label: {2})".format(
-            classes[preds[idx]],
+            preds[idx],
             probs[idx] * 100.0,
-            classes[labels[idx]]),
+            labels[idx]),
                     color=("green" if preds[idx]==labels[idx].item() else "red"))
     return fig
 
@@ -316,7 +348,7 @@ def get_checkpoint_metadata():
         View-only Google Drive link to the submitted 'checkpoint.pth'.
         The file must have the same checksum as in `md5_checksum`.
     """
-    md5_checksum = "012075d1867169f3c03a460a25f1b1f6"
-    google_drive_link = "https://drive.google.com/file/d/1b-FmfHgUOkgICmFw1tPPJZj7PQSESUWT/view?usp=sharing"
+    md5_checksum = "e0b27e187fcba0e921299f1fdb6793b0"
+    google_drive_link = "https://drive.google.com/file/d/1mXq8q6bU3qp5p1xobf0rURU57Q_vmweQ/view?usp=sharing"
 
     return md5_checksum, google_drive_link
