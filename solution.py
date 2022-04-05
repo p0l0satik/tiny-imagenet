@@ -1,5 +1,6 @@
 # Don't erase the template code, except "Your code here" comments.
 
+from re import A
 import subprocess
 import sys
 import os
@@ -25,11 +26,12 @@ import numpy as np
 from einops import rearrange
 
 use_cuda = torch.cuda.is_available()
-print(use_cuda)
-device = torch.device("cuda" if use_cuda else "cpu")
+device = torch.device("cuda:0" if use_cuda else "cpu")
+print(device)
 
-batch_size = 1024
+batch_size = 128
 num_epochs = 30
+checkpoint_path = "checkpoint.pth"
 
 def get_dataloader(path, kind):
     """
@@ -72,8 +74,8 @@ def get_model():
         `torch.nn.Module`
     """
     resnet18 = models.resnet18(num_classes=200)
-    model = nn.DataParallel(resnet18, device_ids=[0, 1])
-    model = model.to(device)
+    # model = nn.DataParallel(resnet18, device_ids=[0, 1])
+    model = resnet18.to(device)
     return model
 
 def get_optimizer(model):
@@ -139,6 +141,14 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
                 
 
                 writer.add_scalar('training loss', loss_val.item(), len(train_loss))
+        
+        if epoch == num_epochs - 1:
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': train_loss[-1],
+                }, checkpoint_path)
 
         train_accuracy_overall = np.mean(train_accuracy_batch) * 100
         train_accuracy.append(train_accuracy_overall.item())
@@ -163,6 +173,7 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
 
             val_accuracy_overall = np.mean(val_accuracy_batch) * 100
             val_accuracy.append(val_accuracy_overall.item())
+            print(val_accuracy_overall)
             writer.add_scalar('accuracy', val_accuracy_overall.item(), len(val_accuracy))
 
 def compute_loss(prediction, y_true, device='cuda:0'):
@@ -230,7 +241,8 @@ def predict(model, batch):
         they can also be raw class scores after the last (usually linear) layer,
         i.e. BEFORE softmax.
     """
-    # Your code here
+    batch = batch.to(device)
+    return model(batch)
 
 def validate(dataloader, model):
     """
@@ -252,8 +264,23 @@ def validate(dataloader, model):
         `float`
         Average loss over all `dataloader` samples.
     """
-    # Your code here
+    loss = nn.CrossEntropyLoss().type(torch.FloatTensor)
+    test_loss = []
+    test_accuracy = []
+    with torch.no_grad():
+        for _, (X_batch, y_batch) in tqdm(enumerate(dataloader), total=len(dataloader)):
+                # transferring batch to GPU
+                X_batch_gpu = X_batch.to(device)
+                y_batch = y_batch.to(device)
+                # forward propagation through the model
+                prediction = model(X_batch_gpu)
+                # calculating loss
+                loss_val = loss(prediction, y_batch)
+                accuracy = compute_accuracy(prediction, y_batch, device=device)
 
+                test_loss.append(loss_val.item())
+                test_accuracy.append(accuracy.item())
+    return np.mean(test_accuracy), np.mean(test_loss)
 
 
 
@@ -268,7 +295,9 @@ def load_weights(model, checkpoint_path):
         `str`
         Path to the checkpoint.
     """
-    # Your code here
+    checkpoint = torch.load(checkpoint_path)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
 
 def get_checkpoint_metadata():
     """
@@ -287,7 +316,7 @@ def get_checkpoint_metadata():
         View-only Google Drive link to the submitted 'checkpoint.pth'.
         The file must have the same checksum as in `md5_checksum`.
     """
-    # Your code here; md5_checksum = "747822ca4436819145de8f9e410ca9ca"
-    # Your code here; google_drive_link = "https://drive.google.com/file/d/1uEwFPS6Gb-BBKbJIfv3hvdaXZ0sdXtOo/view?usp=sharing"
+    md5_checksum = "012075d1867169f3c03a460a25f1b1f6"
+    google_drive_link = "https://drive.google.com/file/d/1b-FmfHgUOkgICmFw1tPPJZj7PQSESUWT/view?usp=sharing"
 
     return md5_checksum, google_drive_link
