@@ -30,7 +30,7 @@ device = torch.device("cuda:1")
 print(device)
 
 batch_size = 64
-num_epochs = 15
+num_epochs = 30
 checkpoint_path = "checkpoint.pth"
 name = "resnet_34_rot50+jiter_adamW"
 def get_dataloader(path, kind):
@@ -58,14 +58,18 @@ def get_dataloader(path, kind):
         'train': T.Compose(
             [
                 # YOUR AUGMENTATIONS
-                T.ColorJitter(brightness=.5, hue=.3),
-                T.RandomRotation(degrees=(-50, 50)),
+                # T.ColorJitter(brightness=.5, hue=.3),
+                # T.RandomRotation(degrees=(-40, 40)),
+                T.RandomAffine(degrees=(-40, 40), translate=(0.1, 0.3), scale=(0.6, 1)),
                 T.ToTensor(),
+                T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ]),
         
         'val': T.Compose(
             [
                 T.ToTensor(),
+                T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+
             ])
     }
 
@@ -97,11 +101,12 @@ def get_model():
     """
     Create neural net object, initialize it with raw weights, upload it to GPU.
 
+
     return:
     model:
         `torch.nn.Module`
     """
-    model = models.resnet34(num_classes=200)
+    model = models.resnet18(num_classes=200)
     model.conv1 = nn.Conv2d(3, 64, kernel_size=(3,3), stride=(2,2), padding=(1,1), bias=False)
     # model = nn.DataParallel(resnet18, device_ids=[0, 1])
     model = model.to(device)
@@ -193,7 +198,7 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
             for X_batch, y_batch in tqdm(val_dataloader):
                 # transferring batch to GPU
                 X_batch_gpu = X_batch.to(device)
-                writer.add_graph(model, X_batch_gpu)
+                # writer.add_graph(model, X_batch_gpu) 
                 # y_batch = to
                 # forward propagation through the model
                 prediction = model(X_batch_gpu)
