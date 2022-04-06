@@ -26,13 +26,13 @@ import numpy as np
 from einops import rearrange
 
 use_cuda = torch.cuda.is_available()
-device = torch.device("cuda:2" if use_cuda else "cpu")
+device = torch.device("cuda:1")
 print(device)
 
-batch_size = 128
-num_epochs = 30
+batch_size = 64
+num_epochs = 15
 checkpoint_path = "checkpoint.pth"
-
+name = "resnet_34_rot50+jiter_adamW"
 def get_dataloader(path, kind):
     """
     Return dataloader for a `kind` split of Tiny ImageNet.
@@ -58,7 +58,8 @@ def get_dataloader(path, kind):
         'train': T.Compose(
             [
                 # YOUR AUGMENTATIONS
-                T.RandomRotation(degrees=(-20, 20)),
+                T.ColorJitter(brightness=.5, hue=.3),
+                T.RandomRotation(degrees=(-50, 50)),
                 T.ToTensor(),
             ]),
         
@@ -83,10 +84,10 @@ def get_dataloader(path, kind):
             ax[i].imshow(pic_np)
             ax[i].set_title(label)
     
-    if use_cuda:
-        kwargs = {"pin_memory": True, "num_workers": 1}
-    else:
-        kwargs = {}
+    # if use_cuda:
+    #     kwargs = {"pin_memory": True, "num_workers": 1}
+    # else:
+    kwargs = {}
     
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=(kind=="train"), **kwargs)
     
@@ -100,7 +101,7 @@ def get_model():
     model:
         `torch.nn.Module`
     """
-    model = models.resnet18(num_classes=200)
+    model = models.resnet34(num_classes=200)
     model.conv1 = nn.Conv2d(3, 64, kernel_size=(3,3), stride=(2,2), padding=(1,1), bias=False)
     # model = nn.DataParallel(resnet18, device_ids=[0, 1])
     model = model.to(device)
@@ -116,7 +117,7 @@ def get_optimizer(model):
         `torch.optim.Optimizer`
     """
     lr = 0.001
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    optimizer = optim.AdamW(model.parameters(), lr=lr)
     return optimizer
 
 def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
@@ -133,13 +134,13 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
     """
     
     loss = nn.CrossEntropyLoss().type(torch.FloatTensor)
-    writer = SummaryWriter(f'runs/tim')
+    writer = SummaryWriter(name)
     
 
     train_loss = []
     train_accuracy = []
     val_accuracy = []
-    
+    val_loss = []
 
     for epoch in range(num_epochs):
         start_time = time.time()
@@ -202,7 +203,7 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
                 val_accuracy_batch.append(accuracy.item())
             
                 # sending pictures to TensorBoard (don't think about this for now)
-                writer.add_figure('predictions vs. actuals', plot_classes_preds(model, X_batch_gpu, y_batch), global_step=epoch)
+                # writer.add_figure('predictions vs. actuals', plot_classes_preds(model, X_batch_gpu, y_batch), global_step=epoch)
 
             val_accuracy_overall = np.mean(val_accuracy_batch) * 100
             val_accuracy.append(val_accuracy_overall.item())
