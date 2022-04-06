@@ -26,13 +26,13 @@ import numpy as np
 from einops import rearrange
 
 use_cuda = torch.cuda.is_available()
-device = torch.device("cuda:2" if use_cuda else "cpu")
+device = torch.device("cuda" if use_cuda else "cpu")
 print(device)
 
 batch_size = 64
-num_epochs = 17
+num_epochs = 20
 checkpoint_path = "checkpoint.pth"
-name_run = f"resnet_18_rot45_sh"
+name_run = f"dense_121_rot45_sh_norm"
 
 def get_dataloader(path, kind):
     """
@@ -59,17 +59,20 @@ def get_dataloader(path, kind):
         'train': T.Compose(
             [
                 # YOUR AUGMENTATIONS
+                # T.ColorJitter(brightness=.5, hue=.3),
+                T.RandomRotation(degrees=(-45, 45)),
                 # T.ColorJitter(brightness=.1, hue=.1, contrast=.1, saturation=.1),
                 # T.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5)),
                 # T.RandomPerspective(distortion_scale=0.3, p=1),
-                T.RandomRotation(degrees=(-45, 45)),
-                # T.AutoAugment(T.AutoAugmentPolicy.IMAGENET),
+                # T.RandomAffine(degrees=(-40, 40), translate=(0.1, 0.3), scale=(0.6, 1)),
                 T.ToTensor(),
+                T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ]),
         
         'val': T.Compose(
             [
                 T.ToTensor(),
+                T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ])
     }
 
@@ -105,7 +108,7 @@ def get_model():
     model:
         `torch.nn.Module`
     """
-    model = models.resnet18(num_classes=200)
+    model = models.densenet121(num_classes=200)
     model.conv1 = nn.Conv2d(3, 64, kernel_size=(3,3), stride=(2,2), padding=(1,1), bias=False)
     # model = nn.DataParallel(resnet18, device_ids=[0, 1])
     model = model.to(device)
@@ -144,7 +147,7 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
     train_loss = []
     train_accuracy = []
     val_accuracy = []
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=9, gamma=0.1)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=13, gamma=0.1)
 
     for epoch in range(num_epochs):
         start_time = time.time()
@@ -175,8 +178,6 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
             if batch_no % 15 == 0:
                 # plot_loss_and_accuracy(train_loss, train_accuracy, val_accuracy, clear_output=True)
                 # print(f'epoch {epoch} training stage...')
-                
-
                 writer.add_scalar('training loss', loss_val.item(), len(train_loss))
         
         if epoch == num_epochs - 1:
@@ -191,13 +192,16 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
         train_accuracy.append(train_accuracy_overall.item())
 
         print(f'epoch {epoch} testing stage...')
-        model.train(False) # disable dropout / use averages for batch_norm
+        model.eval() # disable dropout / use averages for batch_norm
         val_accuracy_batch = []
+        print(device)
         with torch.no_grad():
             for X_batch, y_batch in tqdm(val_dataloader):
                 # transferring batch to GPU
                 X_batch_gpu = X_batch.to(device)
-                writer.add_graph(model, X_batch_gpu)
+                y_batch = y_batch.to(device)
+
+                # writer.add_graph(model, X_batch_gpu)
                 # y_batch = to
                 # forward propagation through the model
                 prediction = model(X_batch_gpu)
@@ -222,8 +226,8 @@ def compute_loss(prediction, y_true, device='cuda:0'):
 
 def compute_accuracy(prediction, y_true, device='cuda:0'):
     y_pred = torch.argmax(prediction, dim=1)
-    y_true_on_device = y_true.to(device)
-    accuracy = (y_pred == y_true_on_device).float().mean()
+    # y_true_on_device = y_true.to(device)
+    accuracy = (y_pred == y_true).float().mean()
     return accuracy
 
 # functions for tensorboard logging:
@@ -334,7 +338,7 @@ def load_weights(model, checkpoint_path):
         `str`
         Path to the checkpoint.
     """
-    checkpoint = torch.load(checkpoint_path)
+    checkpoint = torch.load(checkpoint_path, map_location={'cuda:1': 'cuda'})
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
 
@@ -355,7 +359,7 @@ def get_checkpoint_metadata():
         View-only Google Drive link to the submitted 'checkpoint.pth'.
         The file must have the same checksum as in `md5_checksum`.
     """
-    md5_checksum = "e0b27e187fcba0e921299f1fdb6793b0"
+    md5_checksum = "e04c88d04cb59ca055c692a9cadbc4eb"
     google_drive_link = "https://drive.google.com/file/d/1mXq8q6bU3qp5p1xobf0rURU57Q_vmweQ/view?usp=sharing"
 
     return md5_checksum, google_drive_link
