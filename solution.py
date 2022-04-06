@@ -29,9 +29,10 @@ use_cuda = torch.cuda.is_available()
 device = torch.device("cuda:2" if use_cuda else "cpu")
 print(device)
 
-batch_size = 128
-num_epochs = 30
+batch_size = 64
+num_epochs = 17
 checkpoint_path = "checkpoint.pth"
+name_run = f"resnet_18_rot45_sh"
 
 def get_dataloader(path, kind):
     """
@@ -58,7 +59,11 @@ def get_dataloader(path, kind):
         'train': T.Compose(
             [
                 # YOUR AUGMENTATIONS
-                T.RandomRotation(degrees=(-20, 20)),
+                # T.ColorJitter(brightness=.1, hue=.1, contrast=.1, saturation=.1),
+                # T.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5)),
+                # T.RandomPerspective(distortion_scale=0.3, p=1),
+                T.RandomRotation(degrees=(-45, 45)),
+                # T.AutoAugment(T.AutoAugmentPolicy.IMAGENET),
                 T.ToTensor(),
             ]),
         
@@ -115,7 +120,7 @@ def get_optimizer(model):
     optimizer:
         `torch.optim.Optimizer`
     """
-    lr = 0.001
+    lr = 0.01
     optimizer = optim.Adam(model.parameters(), lr=lr)
     return optimizer
 
@@ -133,13 +138,13 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
     """
     
     loss = nn.CrossEntropyLoss().type(torch.FloatTensor)
-    writer = SummaryWriter(f'runs/tim')
+    writer = SummaryWriter(name_run)
     
 
     train_loss = []
     train_accuracy = []
     val_accuracy = []
-    
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=9, gamma=0.1)
 
     for epoch in range(num_epochs):
         start_time = time.time()
@@ -202,12 +207,14 @@ def train_on_tinyimagenet(train_dataloader, val_dataloader, model, optimizer):
                 val_accuracy_batch.append(accuracy.item())
             
                 # sending pictures to TensorBoard (don't think about this for now)
-                writer.add_figure('predictions vs. actuals', plot_classes_preds(model, X_batch_gpu, y_batch), global_step=epoch)
+                # writer.add_figure('predictions vs. actuals', plot_classes_preds(model, X_batch_gpu, y_batch), global_step=epoch)
 
             val_accuracy_overall = np.mean(val_accuracy_batch) * 100
             val_accuracy.append(val_accuracy_overall.item())
             print(val_accuracy_overall)
             writer.add_scalar('accuracy', val_accuracy_overall.item(), len(val_accuracy))
+        scheduler.step()
+        
 
 def compute_loss(prediction, y_true, device='cuda:0'):
     y_true_on_device = y_true.to(device)
